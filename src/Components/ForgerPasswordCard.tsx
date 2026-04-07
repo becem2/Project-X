@@ -30,7 +30,7 @@ function ForgetPasswordCard({ onBack, onEmailSubmitted }: ForgetPasswordCardProp
                 <button 
                     type="button"
                     onClick={(e) => { e.preventDefault(); onBack(); }} 
-                    className="text-gray-500 text-sm flex items-center gap-2 transition-colors hover:text-gray-900"
+                    className="text-gray-500 text-sm flex items-center gap-2 transition-colors hover:text-gray-900 cursor-pointer"
                 >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -47,13 +47,13 @@ function ForgetPasswordCard({ onBack, onEmailSubmitted }: ForgetPasswordCardProp
                     <Key size={32} className="text-emerald-600" />
                 </div>
 
-                <h1 className="text-2xl font-bold text-gray-900 mb-3">Reset Password</h1>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">Reset Password</h1>
                 <p className="text-sm text-gray-500 leading-relaxed mb-8 max-w-sm">
                     Enter your email address and we'll send you instructions to reset your password
                 </p>
 
                 {/* Email Input Field */}
-                <div className="w-full text-left mb-4">
+                <div className="w-full text-left mb-6">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
                     <div className="flex items-center border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 transition-all focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-inset focus-within:ring-emerald-600">
                         <Mail size={20} className="mr-3 text-gray-400 opacity-50" />

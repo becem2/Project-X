@@ -16,11 +16,11 @@ function CheckYourEmailCard({
     return (
         <div className="w-full max-w-md bg-white rounded-lg p-8 shadow-lg">
             {/* Back Button */}
-            <div className="flex justify-start mb-5">
+            <div className="flex justify-start mb-5 hover:cursor-pointer">
                 <button
                     type="button"
                     onClick={onBackToLogin}
-                    className="text-gray-500 text-sm flex items-center gap-2 transition-colors hover:text-gray-900"
+                    className="text-gray-500 text-sm flex items-center gap-2 transition-colors hover:text-gray-900 "
                 >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
                         <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -42,12 +42,12 @@ function CheckYourEmailCard({
                     </div>
                 </div>
 
-                <h1 className="text-2xl font-bold text-gray-900 mb-3">Check Your Email</h1>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">Check Your Email</h1>
                 <p className="text-sm text-gray-500 leading-relaxed mb-2 max-w-sm">
                     We've sent password reset instructions to
                 </p>
                 
-                <p className="text-sm font-semibold text-emerald-600 mb-4">{email}</p>
+                <p className="text-sm text-emerald-600 font-semibold mb-4">{email}</p>
                 
                 <p className="text-sm text-gray-500 leading-relaxed mb-8 max-w-sm">
                     If you don't see the email, check your spam folder or try again with a different email address.

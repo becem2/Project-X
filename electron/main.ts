@@ -42,6 +42,7 @@ function createWindow() {
       symbolColor: '#f8fafc'
 
     }
+    
 
   })
 
@@ -55,8 +56,14 @@ function createWindow() {
   } else {
     // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
+    
   }
+
+  // Open DevTools
+  win.webContents.openDevTools()
+  
 }
+
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
