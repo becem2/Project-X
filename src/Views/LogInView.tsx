@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import LogInCard from "../Components/LogInView/LogInCard";
 import SignUpOptionsCard from "../Components/LogInView/SignUpOptionsCard";
 import AdditionalInfoCard from "../Components/LogInView/AdditionalInfoCard";
@@ -9,9 +9,28 @@ import { User } from "firebase/auth";
 
 interface LogInSignUpProps {
     onUserDataComplete: () => void;
+    pendingProfileUser?: {
+        uid: string;
+        email: string;
+        displayName: string;
+        providerId: string;
+    } | null;
 }
 
-function LogInSignUp({ onUserDataComplete }: LogInSignUpProps) {
+const splitDisplayName = (displayName: string) => {
+    const trimmedName = displayName.trim();
+    if (!trimmedName) {
+        return { firstName: "", lastName: "" };
+    }
+
+    const nameParts = trimmedName.split(/\s+/);
+    return {
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" "),
+    };
+};
+
+function LogInSignUp({ onUserDataComplete, pendingProfileUser = null }: LogInSignUpProps) {
     const [isLogIn, setIsLogIn] = useState(true);
     const [isForgetPassword, setIsForgetPassword] = useState(false);
     const [isCheckYourEmail, setIsCheckYourEmail] = useState(false);
@@ -19,6 +38,46 @@ function LogInSignUp({ onUserDataComplete }: LogInSignUpProps) {
     const [submittedEmail, setSubmittedEmail] = useState("");
     const [currentUserUid, setCurrentUserUid] = useState("");
     const [currentUserEmail, setCurrentUserEmail] = useState("");
+    const [currentUserProvider, setCurrentUserProvider] = useState("password");
+    const [prefilledFirstName, setPrefilledFirstName] = useState("");
+    const [prefilledLastName, setPrefilledLastName] = useState("");
+
+    useEffect(() => {
+        if (!pendingProfileUser?.uid) {
+            return;
+        }
+
+        const prefilledNames = splitDisplayName(pendingProfileUser.displayName || "");
+
+        setCurrentUserUid(pendingProfileUser.uid);
+        setCurrentUserEmail(pendingProfileUser.email || "");
+        setCurrentUserProvider(pendingProfileUser.providerId || "password");
+        setPrefilledFirstName(prefilledNames.firstName);
+        setPrefilledLastName(prefilledNames.lastName);
+        setIsLogIn(false);
+        setIsForgetPassword(false);
+        setIsCheckYourEmail(false);
+        setIsAdditionalInfo(true);
+    }, [pendingProfileUser]);
+
+    const isProfileCompletionRequired = isAdditionalInfo && currentUserUid.length > 0;
+
+    useEffect(() => {
+        if (!isProfileCompletionRequired) {
+            return;
+        }
+
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+
+        return () => {
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+        };
+    }, [isProfileCompletionRequired]);
 
     const handleEmailSubmitted = (email: string) => {
         setSubmittedEmail(email);
@@ -39,8 +98,12 @@ function LogInSignUp({ onUserDataComplete }: LogInSignUpProps) {
     };
 
     const handleSignUpSuccess = (user: User) => {
+        const prefilledNames = splitDisplayName(user.displayName || "");
         setCurrentUserUid(user.uid);
         setCurrentUserEmail(user.email || "");
+        setCurrentUserProvider(user.providerData[0]?.providerId || "password");
+        setPrefilledFirstName(prefilledNames.firstName);
+        setPrefilledLastName(prefilledNames.lastName);
         setIsAdditionalInfo(true);
     };
 
@@ -72,6 +135,9 @@ function LogInSignUp({ onUserDataComplete }: LogInSignUpProps) {
                     <AdditionalInfoCard 
                         uid={currentUserUid} 
                         email={currentUserEmail} 
+                        authProvider={currentUserProvider}
+                        initialFirstName={prefilledFirstName}
+                        initialLastName={prefilledLastName}
                         onComplete={() => { 
                             setIsAdditionalInfo(false); 
                             setIsLogIn(true); 
@@ -80,7 +146,11 @@ function LogInSignUp({ onUserDataComplete }: LogInSignUpProps) {
                     />
                 ) : (
                     <SignUpOptionsCard 
-                        onSwitch={() => setIsLogIn(true)} 
+                        onSwitch={() => {
+                            if (!isProfileCompletionRequired) {
+                                setIsLogIn(true);
+                            }
+                        }} 
                         onSignUpSuccess={handleSignUpSuccess}
                     />
                 )}

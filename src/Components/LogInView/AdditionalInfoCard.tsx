@@ -6,32 +6,55 @@ import { db } from "../../Config/Firebase";
 interface AdditionalInfoCardProps {
     uid: string;
     email: string;
+    authProvider?: string;
+    initialFirstName?: string;
+    initialLastName?: string;
     onComplete: () => void;
 }
 
-function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps) {
-    const [firstName, setFirstName] = useState("");
-    const [lastName, setLastName] = useState("");
+function AdditionalInfoCard({
+    uid,
+    email,
+    authProvider = "password",
+    initialFirstName = "",
+    initialLastName = "",
+    onComplete,
+}: AdditionalInfoCardProps) {
+    const [firstName, setFirstName] = useState(initialFirstName);
+    const [lastName, setLastName] = useState(initialLastName);
     const [organization, setOrganization] = useState("");
     const [role, setRole] = useState("");
     const [mobilePhone, setMobilePhone] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
+
+        if (!firstName.trim() || !lastName.trim() || !organization.trim() || !role.trim() || !mobilePhone.trim()) {
+            setErrorMessage("Please complete all required fields before continuing.");
+            return;
+        }
+
+        setErrorMessage("");
+
         try {
+            setIsSaving(true);
             await setDoc(doc(db, "Users", uid), {
                 email,
-                firstName,
-                lastName,
-                organization,
-                role,
-                mobilePhone
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
+                organization: organization.trim(),
+                role: role.trim(),
+                mobilePhone: mobilePhone.trim(),
+                authProvider,
+                profileCompleted: true,
             }, { merge: true });
-
-            console.log("Additional info saved successfully!");
             onComplete();
         } catch (error) {
-            console.log((error as Error).message);
+            setErrorMessage((error as Error).message || "Failed to save your information. Please try again.");
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -40,10 +63,16 @@ function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps)
             <h1 className="text-2xl font-bold mb-2 text-gray-900">Complete Your Profile</h1>
             <p className="text-sm text-gray-500 mb-6">Please provide additional information to finish setting up your account</p>
 
-            <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+            {errorMessage && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {errorMessage}
+                </div>
+            )}
+
+            <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
 
                 {/* First Name */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                         First Name
                     </label>
@@ -61,7 +90,7 @@ function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps)
                 </div>
 
                 {/* Last Name */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Last Name
                     </label>
@@ -79,7 +108,7 @@ function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps)
                 </div>
 
                 {/* Organization */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Organization
                     </label>
@@ -97,7 +126,7 @@ function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps)
                 </div>
 
                 {/* Role */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Role
                     </label>
@@ -115,7 +144,7 @@ function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps)
                 </div>
 
                 {/* Mobile Phone */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Mobile Phone
                     </label>
@@ -135,9 +164,10 @@ function AdditionalInfoCard({ uid, email, onComplete }: AdditionalInfoCardProps)
                 {/* Submit */}
                 <button
                     type="submit"
-                    className="w-full bg-emerald-600 text-white font-semibold py-3 rounded-lg transition-colors duration-300 hover:bg-emerald-700 cursor-pointer"
+                    disabled={isSaving}
+                    className="w-full bg-emerald-600 text-white font-semibold py-3 rounded-lg transition-colors duration-300 hover:bg-emerald-700 cursor-pointer disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
-                    Complete Profile
+                    {isSaving ? "Saving..." : "Complete Profile"}
                 </button>
             </form>
 

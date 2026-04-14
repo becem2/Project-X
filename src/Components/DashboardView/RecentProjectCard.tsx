@@ -1,19 +1,31 @@
 import { Activity, Clock, Eye, ImageIcon, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 
-function RecentProjectCard({ project }: { project: any }) {
+type RecentProject = {
+  id: string;
+  name: string;
+  status: "Processed" | "Processing" | "Not Started" | "Failed";
+  progress: number;
+  date: string;
+  images: number;
+};
+
+function RecentProjectCard({ project }: { project: RecentProject }) {
   const statusColors = {
-    Completed: "text-primary",
+    Processed: "text-primary",
     Processing: "text-yellow-500",
-    Pending: "text-muted-foreground",
+    "Not Started": "text-muted-foreground",
+    Failed: "text-red-500",
   };
 
+  const destinationPath = project.status === "Processing" ? `/processing/${project.id}` : `/viewer/${project.id}`;
+
   return (
-    <Link to={`/dashboard/viewer/${project.id}`}>
+    <Link to={destinationPath}>
       <div className="group bg-card border border-border rounded-xl overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all">
         <div className="flex gap-4">
           {/* Thumbnail */}
-          <div className="w-48 h-32 bg-secondary relative overflow-hidden flex-shrink-0">
+          <div className="w-48 h-32 bg-secondary relative overflow-hidden shrink-0">
             {project.progress < 100 && (
               <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
                 <div
@@ -57,7 +69,7 @@ function RecentProjectCard({ project }: { project: any }) {
 
             {/* Action Button */}
             <div className="flex items-center gap-2">
-              {project.status === "Completed" ? (
+              {project.status === "Processed" ? (
                 <button className="w-10 h-10 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg flex items-center justify-center transition-colors">
                   <Eye className="w-5 h-5" />
                 </button>

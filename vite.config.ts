@@ -5,6 +5,15 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    // This fixes the port so it matches your Google Cloud Console setting
+    port: 57959, 
+    strictPort: true, 
+  },
+  preview: {
+    port: 57959,
+    strictPort: true,
+  },
   plugins: [
     react(),
     electron({

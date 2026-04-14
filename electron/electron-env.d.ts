@@ -24,4 +24,48 @@ declare namespace NodeJS {
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
   ipcRenderer: import('electron').IpcRenderer
+  electronAPI: {
+    readDirectory: (dirPath: string) => Promise<unknown>
+    selectFolder: () => Promise<string | null>
+    selectImages: () => Promise<Array<{ path: string; name: string; size: number }>>
+    createProject: (payload: {
+      projectId: string
+      projectName: string
+      projectLocation: string
+      description: string
+      images: Array<{ path: string; name: string; size: number }>
+    }) => Promise<{
+      projectPath: string
+      imagesCopied: number
+      descriptionPath: string
+    }>
+    getSystemStats: () => Promise<{
+      cpuUsage: number
+      gpuUsage: number
+      storageUsedGB: number
+      storageTotalGB: number
+      storagePercent: number
+      storageLabel: string
+    }>
+    minimize: () => void
+    maximize: () => void
+    close: () => void
+    openExplorer: (folderPath: string) => Promise<unknown>
+    trashProjectFolder: (folderPath: string) => Promise<
+      | { movedToTrash: true }
+      | { movedToTrash: false; reason: "not-found" }
+    >
+    getOdmTaskState: (projectId: string) => Promise<{
+      status: "idle" | "running" | "completed" | "failed"
+      logs: string[]
+      startedAt?: number
+      endedAt?: number
+      exitCode?: number | null
+    }>
+    signInWithGoogleExternal: () => Promise<{
+      idToken: string
+      accessToken?: string
+    }>
+    onMainMessage: (callback: (data: any) => void) => () => void
+  }
 }

@@ -2,8 +2,14 @@ import { FormEvent, useState } from "react";
 import { Mail, Eye, EyeOff, Lock } from 'lucide-react';
 
 import Button from "./SocialLogInButtons";
-import { createUserWithEmailAndPassword, signInWithPopup, User } from "firebase/auth";
-import { auth, googleProvider, facebookProvider, githubProvider, appleProvider } from "../../Config/Firebase";
+import {
+    createUserWithEmailAndPassword,
+    GoogleAuthProvider,
+    signInWithCredential,
+    signInWithPopup,
+    User,
+} from "firebase/auth";
+import { auth, facebookProvider, githubProvider, appleProvider } from "../../Config/Firebase";
 
 interface SignUpOptionsCardProps {
     onSwitch: () => void;
@@ -37,7 +43,12 @@ function SignUpOptionsCard({ onSwitch, onSignUpSuccess }: SignUpOptionsCardProps
 
     const signInWithGoogle = async () => {
         try {
-            const result = await signInWithPopup(auth, googleProvider);
+            const googleAuthResult = await window.electronAPI.signInWithGoogleExternal();
+            const googleCredential = GoogleAuthProvider.credential(
+                googleAuthResult.idToken,
+                googleAuthResult.accessToken
+            );
+            const result = await signInWithCredential(auth, googleCredential);
             onSignUpSuccess(result.user);
         } catch (error) {
             console.log(error);

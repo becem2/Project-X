@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidProjectNameKey(projectNameKey) {
+      return projectNameKey is string
+        && projectNameKey.size() > 0
+        && projectNameKey.size() <= 180
+        && projectNameKey.matches('^[a-z0-9%_.~\-]+$');
+    }
+
+    function isValidProjectDoc(userId, projectNameKey, data) {
+      return data.uid == userId
+        && data.nameKey == projectNameKey
+        && data.projectId is string
+        && data.projectId.size() > 0
+        && data.name is string
+        && data.name.size() > 0
+        && data.status is string
+        && data.imageCount is int
+        && data.imageCount >= 0
+        && data.totalImageSizeBytes is int
+        && data.totalImageSizeBytes >= 0
+        && data.projectPath is string
+        && data.basePath is string
+        && data.description is string
+        && data.processingOptions is map
+        && data.processingOptions.generate3D is bool
+        && data.processingOptions.generateOrtho is bool
+        && data.processingOptions.generateNDVI is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /Users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /Projects/{projectNameKey} {
+        allow read: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidProjectNameKey(projectNameKey)
+          && isValidProjectDoc(userId, projectNameKey, request.resource.data);
+
+        allow update: if isOwner(userId)
+          && isValidProjectNameKey(projectNameKey)
+          && isValidProjectDoc(userId, projectNameKey, request.resource.data)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.projectId == resource.data.projectId
+          && request.resource.data.nameKey == resource.data.nameKey
+          && request.resource.data.name == resource.data.name
+          && request.resource.data.createdAt == resource.data.createdAt;
+
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

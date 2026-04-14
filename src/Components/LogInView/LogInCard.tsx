@@ -2,8 +2,16 @@ import { FormEvent, useState } from "react";
 import { Mail, Eye, EyeOff, Lock } from 'lucide-react';
 
 import Button from "./SocialLogInButtons";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../Config/Firebase";
+import {
+    browserLocalPersistence,
+    browserSessionPersistence,
+    GoogleAuthProvider,
+    signInWithCredential,
+    setPersistence,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+} from "firebase/auth";
+import { appleProvider, auth, facebookProvider, githubProvider, googleProvider } from "../../Config/Firebase";
 
 interface LogInCardProps {
     onSignUp: () => void;
@@ -16,10 +24,19 @@ function LogInCard({ onSignUp, onForgot }: LogInCardProps) {
     const [showPassword, setShowPassword] = useState(false);
     const [email,setEmail] = useState("");
     const [password,setPassword] = useState("");
+    const [rememberMe, setRememberMe] = useState(false);
+
+    const setAuthPersistenceByRememberChoice = async () => {
+        await setPersistence(
+            auth,
+            rememberMe ? browserLocalPersistence : browserSessionPersistence
+        );
+    };
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         try {
+            await setAuthPersistenceByRememberChoice();
             await signInWithEmailAndPassword(auth,email,password);
             console.log("User logged in Succesefully!!!");
         } catch (error) {
@@ -27,6 +44,27 @@ function LogInCard({ onSignUp, onForgot }: LogInCardProps) {
             
         }
     }
+
+    const handleSocialLogin = async (provider: typeof googleProvider) => {
+        try {
+            await setAuthPersistenceByRememberChoice();
+
+            if (provider.providerId === googleProvider.providerId) {
+                const googleAuthResult = await window.electronAPI.signInWithGoogleExternal();
+                const googleCredential = GoogleAuthProvider.credential(
+                    googleAuthResult.idToken,
+                    googleAuthResult.accessToken
+                );
+                await signInWithCredential(auth, googleCredential);
+                return;
+            }
+
+            await signInWithPopup(auth, provider);
+            console.log("User logged in Succesefully!!!");
+        } catch (error) {
+            console.log((error as Error).message);
+        }
+    };
 
     return (
         <div className="bg-white rounded-2xl p-10 w-3/5 min-w-96 h-auto shadow-lg text-left border border-gray-300">
@@ -37,10 +75,10 @@ function LogInCard({ onSignUp, onForgot }: LogInCardProps) {
 
 
             <div className="grid grid-cols-2 gap-2 mb-5">
-                <Button text="Google" />
-                <Button text="Facebook" />
-                <Button text="Apple" />
-                <Button text="Github" />
+                <Button text="Google" onClick={() => void handleSocialLogin(googleProvider)} />
+                <Button text="Facebook" onClick={() => void handleSocialLogin(facebookProvider)} />
+                <Button text="Apple" onClick={() => void handleSocialLogin(appleProvider)} />
+                <Button text="Github" onClick={() => void handleSocialLogin(githubProvider)} />
             </div>
 
 
@@ -87,7 +125,12 @@ function LogInCard({ onSignUp, onForgot }: LogInCardProps) {
 
                 <div className="flex justify-between items-center text-xs">
                     <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" className="accent-emerald-600" /> 
+                        <input
+                            type="checkbox"
+                            className="accent-emerald-600"
+                            checked={rememberMe}
+                            onChange={(e) => setRememberMe(e.target.checked)}
+                        />
                         <span>Remember me</span>
                     </label>
                     <a 
