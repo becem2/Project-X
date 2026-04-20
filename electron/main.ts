@@ -244,6 +244,7 @@ function createWindow() {
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
+    win.webContents.openDevTools({ mode: "detach" });
   } else {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
@@ -338,7 +339,7 @@ ipcMain.handle("read-directory", async (_event, dirPath: string) => {
       const stats = await fs.promises.stat(fullPath);
       return { name: file, path: fullPath, isDirectory: stats.isDirectory(), size: stats.size, type: stats.isDirectory() ? "folder" : path.extname(file).toLowerCase() };
     }));
-    const allowed = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".obj", ".ply"];
+    const allowed = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".obj", ".ply", ".tfw", ".dxf", ".prj"];
     return detailedFiles.filter(f => f.isDirectory || allowed.includes(f.type));
   } catch (err: any) { return { error: err.message }; }
 });

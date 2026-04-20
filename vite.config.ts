@@ -5,6 +5,14 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  resolve: {
+    alias: [
+      {
+        find: /^geotiff$/,
+        replacement: path.resolve(__dirname, 'node_modules/geotiff/dist-browser/geotiff.js'),
+      },
+    ],
+  },
   server: {
     // This fixes the port so it matches your Google Cloud Console setting
     port: 57959, 

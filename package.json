@@ -2,7 +2,7 @@
   "name": "my-photogrammetry-app",
   "author": "Becem Mhamdi",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "This is a professional photogrammetry Software",
   "scripts": {
@@ -26,6 +26,7 @@
     "framer-motion": "^12.38.0",
     "geotiff": "^3.0.5",
     "leaflet": "^1.9.4",
+    "leaflet.gridlayer.googlemutant": "^0.16.0",
     "lucide-react": "^1.7.0",
     "motion-react": "^0.15.0-alpha.1",
     "nodemailer": "^8.0.5",

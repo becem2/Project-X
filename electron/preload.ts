@@ -152,4 +152,4 @@ const electronAPI = {
 };
 
 // Publish the safe API on window.electronAPI.
-contextBridge.exposeInMainWorld("electronAPI", electronAPI);``
+contextBridge.exposeInMainWorld("electronAPI", electronAPI);
