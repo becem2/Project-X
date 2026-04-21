@@ -192,6 +192,7 @@ export function useUserProjects() {
               projectPath?: string;
               basePath?: string;
               projectIconPath?: string;
+              projectIconUrl?: string;
               createdAt?: unknown;
               updatedAt?: unknown;
               processingOptions?: {
@@ -211,6 +212,8 @@ export function useUserProjects() {
             const projectPath = typeof projectData.projectPath === "string" ? projectData.projectPath : "";
             const basePath = typeof projectData.basePath === "string" ? projectData.basePath : "";
             const iconPath = typeof projectData.projectIconPath === "string" ? projectData.projectIconPath : "";
+            const iconDownloadUrl =
+              typeof projectData.projectIconUrl === "string" ? projectData.projectIconUrl.trim() : "";
 
             return {
               documentId: projectDoc.id,
@@ -224,7 +227,7 @@ export function useUserProjects() {
               projectPath,
               basePath,
               iconPath,
-              iconUrl: toFileAssetUrl(iconPath),
+              iconUrl: iconDownloadUrl || toFileAssetUrl(iconPath),
               createdAt,
               updatedAt,
               createdAtMs: createdAt?.getTime() ?? 0,

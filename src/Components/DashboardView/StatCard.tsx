@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import type { LucideIcon } from "lucide-react";
 
 // Small summary card used across the dashboard metrics grid.
 function StatCard({
@@ -8,7 +9,7 @@ function StatCard({
   trend,
   color,
 }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   value: string;
   trend: string;

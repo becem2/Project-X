@@ -193,7 +193,7 @@ function Processing() {
 
   useEffect(() => {
     // Simulate incremental progress for projects that are still in flight.
-    if (!isProcessing || currentProgress >= 100) {
+    if (!isProcessing) {
       clearProcessingTimer();
       return;
     }

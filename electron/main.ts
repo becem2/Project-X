@@ -38,10 +38,19 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 // ==============================
 let win: BrowserWindow | null = null;
 let systemStatsTimer: NodeJS.Timeout | null = null;
+const POINTCLOUD_DEBUG = true;
+
+const pointCloudDebugLog = (...args: unknown[]) => {
+  if (!POINTCLOUD_DEBUG) return;
+  console.log("[PointCloudDebug:main]", ...args);
+};
 
 type SystemStats = {
   cpuUsage: number;
   gpuUsage: number;
+  ramUsedGB: number;
+  ramTotalGB: number;
+  ramPercent: number;
   storageUsedGB: number;
   storageTotalGB: number;
   storagePercent: number;
@@ -73,6 +82,9 @@ const GOOGLE_AUTH_CALLBACK_HOST = "localhost";
 const emptySystemStats: SystemStats = {
   cpuUsage: 0,
   gpuUsage: 0,
+  ramUsedGB: 0,
+  ramTotalGB: 0,
+  ramPercent: 0,
   storageUsedGB: 0,
   storageTotalGB: 0,
   storagePercent: 0,
@@ -88,7 +100,8 @@ const execFileAsync = promisify(execFile);
 function getStorageUsage(): Pick<SystemStats, "storageUsedGB" | "storageTotalGB" | "storagePercent" | "storageLabel"> {
   const rootPath = path.parse(os.homedir()).root || "C:\\";
   const stats = fs.statfsSync(rootPath);
-  const blockSize = Number(stats.bsize || (stats as any).frsize || 0);
+  const statsWithFrsize = stats as typeof stats & { frsize?: number };
+  const blockSize = Number(stats.bsize || statsWithFrsize.frsize || 0);
   const totalBytes = blockSize * Number(stats.blocks || 0);
   const availableBytes = blockSize * Number(stats.bavail || 0);
   const usedBytes = Math.max(totalBytes - availableBytes, 0);
@@ -99,6 +112,19 @@ function getStorageUsage(): Pick<SystemStats, "storageUsedGB" | "storageTotalGB"
     storageTotalGB: totalBytes / 1024 ** 3,
     storagePercent: percent,
     storageLabel: `${rootPath.replace(/\\$/, "")} drive`,
+  };
+}
+
+function getRamUsage(): Pick<SystemStats, "ramUsedGB" | "ramTotalGB" | "ramPercent"> {
+  const totalBytes = os.totalmem();
+  const freeBytes = os.freemem();
+  const usedBytes = Math.max(totalBytes - freeBytes, 0);
+  const percent = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+
+  return {
+    ramUsedGB: usedBytes / 1024 ** 3,
+    ramTotalGB: totalBytes / 1024 ** 3,
+    ramPercent: percent,
   };
 }
 
@@ -140,12 +166,18 @@ async function getGpuUsage(): Promise<number> {
 }
 
 async function refreshSystemStats() {
-  const [storageUsage, gpuUsage, cpuUsage] = await Promise.all([
+  const [storageUsage, ramUsage, gpuUsage, cpuUsage] = await Promise.all([
     Promise.resolve(getStorageUsage()),
+    Promise.resolve(getRamUsage()),
     getGpuUsage(),
     getCpuUsage(),
   ]);
-  latestSystemStats = { cpuUsage: Math.min(100, Math.max(0, cpuUsage)), gpuUsage, ...storageUsage };
+  latestSystemStats = {
+    cpuUsage: Math.min(100, Math.max(0, cpuUsage)),
+    gpuUsage,
+    ...ramUsage,
+    ...storageUsage,
+  };
 }
 
 function startSystemStatsPolling() {
@@ -157,7 +189,12 @@ function startSystemStatsPolling() {
 // 🛠️ Utility Functions
 // ==============================
 function sanitizeFolderName(folderName: string) {
-  return folderName.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").replace(/\.+$/g, "").replace(/\s+/g, " ") || "New Project";
+  const noWindowsSpecialChars = folderName.trim().replace(/[<>:"/\\|?*]/g, "-");
+  const noControlChars = Array.from(noWindowsSpecialChars)
+    .map((char) => (char.charCodeAt(0) < 32 ? "-" : char))
+    .join("");
+
+  return noControlChars.replace(/\.+$/g, "").replace(/\s+/g, " ") || "New Project";
 }
 
 async function getUniqueFilePath(filePath: string) {
@@ -210,8 +247,15 @@ async function signInWithGoogleInBrowser(apiKey: string): Promise<ExternalGoogle
       } catch (e) { cleanup(); reject(e); }
     });
 
-    const cleanup = () => { if (timeout) clearTimeout(timeout); server.close(); };
-    let timeout = setTimeout(() => { cleanup(); reject(new Error("Timeout")); }, 180000);
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+
+      clearTimeout(timeout);
+      server.close();
+    };
+    const timeout = setTimeout(() => { cleanup(); reject(new Error("Timeout")); }, 180000);
 
     server.listen(GOOGLE_AUTH_CALLBACK_PORT, async () => {
       const continueUri = `http://${GOOGLE_AUTH_CALLBACK_HOST}:${GOOGLE_AUTH_CALLBACK_PORT}/auth/google/callback`;
@@ -333,15 +377,46 @@ ipcMain.handle("create-project", async (_event, payload: CreateProjectPayload) =
 
 ipcMain.handle("read-directory", async (_event, dirPath: string) => {
   try {
+    const lowerDirPath = dirPath.toLowerCase();
+    const shouldLogPointCloudDirectory =
+      lowerDirPath.includes("output") ||
+      lowerDirPath.includes("pointcloud") ||
+      lowerDirPath.includes("odm_filterpoints") ||
+      lowerDirPath.includes("metadata");
+
+    if (shouldLogPointCloudDirectory) {
+      pointCloudDebugLog("read-directory request", { dirPath });
+    }
+
     const files = await fs.promises.readdir(dirPath);
     const detailedFiles = await Promise.all(files.map(async (file) => {
       const fullPath = path.join(dirPath, file);
       const stats = await fs.promises.stat(fullPath);
       return { name: file, path: fullPath, isDirectory: stats.isDirectory(), size: stats.size, type: stats.isDirectory() ? "folder" : path.extname(file).toLowerCase() };
     }));
-    const allowed = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".obj", ".ply", ".tfw", ".dxf", ".prj"];
-    return detailedFiles.filter(f => f.isDirectory || allowed.includes(f.type));
-  } catch (err: any) { return { error: err.message }; }
+    const allowed = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".obj", ".ply", ".tfw", ".dxf", ".prj", ".json"];
+    const filtered = detailedFiles.filter(f => f.isDirectory || allowed.includes(f.type));
+
+    if (shouldLogPointCloudDirectory) {
+      pointCloudDebugLog("read-directory response", {
+        dirPath,
+        totalEntries: detailedFiles.length,
+        filteredEntries: filtered.map((entry) => ({
+          name: entry.name,
+          isDirectory: entry.isDirectory,
+          type: entry.type,
+        })),
+      });
+    }
+
+    return filtered;
+  } catch (err: unknown) {
+    pointCloudDebugLog("read-directory error", {
+      dirPath,
+      error: err instanceof Error ? err.message : "Failed to read directory.",
+    });
+    return { error: err instanceof Error ? err.message : "Failed to read directory." };
+  }
 });
 
 ipcMain.handle("open-explorer", async (_event, folderPath: string) => {

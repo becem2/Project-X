@@ -24,8 +24,8 @@ function WorkspaceShell() {
 
         {/* Keep Viewer mounted so model/camera state persists across navigation. */}
         <main className="relative flex-1 overflow-hidden bg-background">
-          <div className={isViewerRoute ? "absolute inset-0 z-10" : "absolute inset-0 z-0 opacity-0 pointer-events-none"}>
-            <Viewer projectIdOverride={viewerProjectId ?? null} />
+          <div className={isViewerRoute ? "absolute inset-0 z-10" : "hidden"}>
+            <Viewer projectIdOverride={viewerProjectId ?? null} isActive={isViewerRoute} />
           </div>
 
           <div className={isViewerRoute ? "hidden" : "h-full overflow-auto"}>

@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 export type SystemStats = {
   cpuUsage: number;
   gpuUsage: number;
+  ramUsedGB: number;
+  ramTotalGB: number;
+  ramPercent: number;
   storageUsedGB: number;
   storageTotalGB: number;
   storagePercent: number;
@@ -13,6 +16,9 @@ export type SystemStats = {
 const defaultStats: SystemStats = {
   cpuUsage: 0,
   gpuUsage: 0,
+  ramUsedGB: 0,
+  ramTotalGB: 0,
+  ramPercent: 0,
   storageUsedGB: 0,
   storageTotalGB: 0,
   storagePercent: 0,
@@ -30,7 +36,23 @@ export function useSystemMetrics(pollInterval = 3000) {
       const nextStats = await window.electronAPI?.getSystemStats?.();
 
       if (active && nextStats) {
-        setStats(nextStats);
+        setStats((previous) => {
+          if (
+            previous.cpuUsage === nextStats.cpuUsage &&
+            previous.gpuUsage === nextStats.gpuUsage &&
+            previous.ramUsedGB === nextStats.ramUsedGB &&
+            previous.ramTotalGB === nextStats.ramTotalGB &&
+            previous.ramPercent === nextStats.ramPercent &&
+            previous.storageUsedGB === nextStats.storageUsedGB &&
+            previous.storageTotalGB === nextStats.storageTotalGB &&
+            previous.storagePercent === nextStats.storagePercent &&
+            previous.storageLabel === nextStats.storageLabel
+          ) {
+            return previous;
+          }
+
+          return nextStats;
+        });
       }
     };
 

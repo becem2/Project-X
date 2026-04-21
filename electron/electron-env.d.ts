@@ -47,6 +47,9 @@ interface Window {
     getSystemStats: () => Promise<{
       cpuUsage: number
       gpuUsage: number
+      ramUsedGB: number
+      ramTotalGB: number
+      ramPercent: number
       storageUsedGB: number
       storageTotalGB: number
       storagePercent: number

@@ -2,6 +2,12 @@ import { useState, FormEvent } from "react";
 import { User, Building2, Phone, Briefcase } from 'lucide-react';
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "../../Config/Firebase";
+import {
+    DEFAULT_PHONE_COUNTRY_ISO2,
+    PHONE_COUNTRY_CODES,
+    buildInternationalPhoneNumber,
+    getPhoneCountryByIso2,
+} from "../../lib/phoneCountryCodes";
 
 // Profile completion form shown after sign-up or social login.
 interface AdditionalInfoCardProps {
@@ -25,6 +31,7 @@ function AdditionalInfoCard({
     const [lastName, setLastName] = useState(initialLastName);
     const [organization, setOrganization] = useState("");
     const [role, setRole] = useState("");
+    const [mobilePhoneCountryIso2, setMobilePhoneCountryIso2] = useState(DEFAULT_PHONE_COUNTRY_ISO2);
     const [mobilePhone, setMobilePhone] = useState("");
     const [isSaving, setIsSaving] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
@@ -41,13 +48,19 @@ function AdditionalInfoCard({
 
         try {
             setIsSaving(true);
+            const selectedCountry = getPhoneCountryByIso2(mobilePhoneCountryIso2);
+            const internationalPhoneNumber = buildInternationalPhoneNumber(selectedCountry.dialCode, mobilePhone);
+
             await setDoc(doc(db, "Users", uid), {
                 email,
                 firstName: firstName.trim(),
                 lastName: lastName.trim(),
                 organization: organization.trim(),
                 role: role.trim(),
-                mobilePhone: mobilePhone.trim(),
+                mobilePhone: internationalPhoneNumber,
+                mobilePhoneCountryIso2: selectedCountry.iso2,
+                mobilePhoneCountryDialCode: selectedCountry.dialCode,
+                mobilePhoneLocalNumber: mobilePhone.trim(),
                 authProvider,
                 profileCompleted: true,
             }, { merge: true });
@@ -149,8 +162,19 @@ function AdditionalInfoCard({
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Mobile Phone
                     </label>
-                    <div className="flex items-center border border-gray-300 rounded-lg px-3 py-2 bg-white transition-all duration-200 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600 focus-within:ring-inset">
-                        <Phone size={20} className="mr-3 text-gray-400" />
+                    <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 bg-white transition-all duration-200 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600 focus-within:ring-inset">
+                        <Phone size={20} className="text-gray-400 shrink-0" />
+                        <select
+                            value={mobilePhoneCountryIso2}
+                            onChange={(e) => setMobilePhoneCountryIso2(e.target.value)}
+                            className="min-w-56 border-none outline-none bg-transparent text-sm text-gray-700"
+                        >
+                            {PHONE_COUNTRY_CODES.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.flag} {option.dialCode}
+                                </option>
+                            ))}
+                        </select>
                         <input
                             type="tel"
                             placeholder="Your Mobile Phone"

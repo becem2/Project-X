@@ -66,3 +66,11 @@ firebase init firestore
 ```
 
 Then point to this repo's `firestore.rules` file and deploy again.
+
+## Point Cloud Workflow
+
+The viewer loads a single point cloud file from your project output:
+
+- `odm_filterpoints/point_cloud.ply`
+
+Auto-load and drag-and-drop in the 3D viewer both use this `.ply` file path.

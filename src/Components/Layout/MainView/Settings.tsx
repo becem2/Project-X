@@ -4,6 +4,15 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { auth, db } from "../../../Config/Firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import { useSystemMetrics } from "../../../hooks/useSystemMetrics";
+import {
+  DEFAULT_PHONE_COUNTRY_ISO2,
+  PHONE_COUNTRY_CODES,
+  buildInternationalPhoneNumber,
+  getPhoneCountryByDialCode,
+  getPhoneCountryByIso2,
+  splitPhoneNumber,
+} from "../../../lib/phoneCountryCodes";
 import SettingSection from "./Settings/SettingSection";
 import SettingRow from "./Settings/SettingRow";
 import ToggleControl from "./Settings/ToggleControl";
@@ -54,11 +63,30 @@ const sanitizeAccentTheme = (value: unknown): AccentTheme => {
   return value === "blue" || value === "amber" ? value : "emerald";
 };
 
+const splitDisplayName = (displayName?: string | null) => {
+  const normalized = displayName?.trim() || "";
+  if (!normalized) {
+    return { first: "", last: "" };
+  }
+
+  const parts = normalized.split(/\s+/);
+  const first = parts.shift() || "";
+  const last = parts.join(" ");
+  return { first, last };
+};
+
+const formatPercent = (value: number) => `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+const formatGigabytes = (value: number) => `${Math.max(0, value).toFixed(1)} GB`;
+
 function Settings() {
   // Load, edit, and persist user preferences for the signed-in account.
   const user = auth.currentUser;
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
-  const [fullName, setFullName] = useState(user?.displayName || "");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [mobilePhoneCountryIso2, setMobilePhoneCountryIso2] = useState(DEFAULT_PHONE_COUNTRY_ISO2);
+  const [mobilePhone, setMobilePhone] = useState("");
   const [defaultProjectLocation, setDefaultProjectLocation] = useState(defaultSettings.defaultProjectLocation);
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(defaultSettings.appearanceMode);
   const [accentTheme, setAccentTheme] = useState<AccentTheme>(defaultSettings.accentTheme);
@@ -69,20 +97,33 @@ function Settings() {
     defaultSettings.processingCompleteNotifications
   );
   const [isSaving, setIsSaving] = useState(false);
+  const { cpuUsage, gpuUsage, ramUsedGB, ramTotalGB, ramPercent } = useSystemMetrics();
+  const fullName = `${firstName} ${lastName}`.trim();
 
   useEffect(() => {
     // Hydrate the form from Firestore when a profile is available.
     if (!user?.uid) {
-      setFullName("");
+      setFirstName("");
+      setLastName("");
+      setOrganization("");
+      setMobilePhoneCountryIso2(DEFAULT_PHONE_COUNTRY_ISO2);
+      setMobilePhone("");
       return;
     }
 
     const loadUserProfile = async () => {
+      const displayNameParts = splitDisplayName(user.displayName);
+
       try {
         const userDoc = await getDoc(doc(db, "Users", user.uid));
         const userData = userDoc.data() as {
           firstName?: string;
           lastName?: string;
+          organization?: string;
+          mobilePhone?: string;
+          mobilePhoneCountryIso2?: string;
+          mobilePhoneCountryDialCode?: string;
+          mobilePhoneLocalNumber?: string;
           defaultProjectLocation?: string;
           appearanceMode?: unknown;
           accentTheme?: unknown;
@@ -92,9 +133,18 @@ function Settings() {
           processingCompleteNotifications?: boolean;
         } | undefined;
 
-        const fetchedFullName = `${userData?.firstName || ""} ${userData?.lastName || ""}`.trim();
+        setFirstName(userData?.firstName?.trim() || displayNameParts.first);
+        setLastName(userData?.lastName?.trim() || displayNameParts.last);
+        setOrganization(userData?.organization?.trim() || "");
 
-        setFullName(fetchedFullName || user?.displayName || "");
+        const phoneSource = userData?.mobilePhoneLocalNumber?.trim() || userData?.mobilePhone?.trim() || "";
+        const parsedPhone = splitPhoneNumber(phoneSource);
+        const phoneCountryIso2 = userData?.mobilePhoneCountryIso2?.trim().toUpperCase();
+        const phoneCountryDialCode = userData?.mobilePhoneCountryDialCode?.trim();
+        setMobilePhoneCountryIso2(
+          phoneCountryIso2 || getPhoneCountryByDialCode(phoneCountryDialCode).iso2 || parsedPhone.countryIso2
+        );
+        setMobilePhone(parsedPhone.localNumber);
         setDefaultProjectLocation(
           userData?.defaultProjectLocation?.trim() || defaultSettings.defaultProjectLocation
         );
@@ -122,7 +172,11 @@ function Settings() {
         );
       } catch (error) {
         console.error("Failed to load user profile", error);
-        setFullName(user?.displayName || "");
+        setFirstName(displayNameParts.first);
+        setLastName(displayNameParts.last);
+        setOrganization("");
+        setMobilePhoneCountryIso2(DEFAULT_PHONE_COUNTRY_ISO2);
+        setMobilePhone("");
         setDefaultProjectLocation(defaultSettings.defaultProjectLocation);
         setAppearanceMode(defaultSettings.appearanceMode);
         setAccentTheme(defaultSettings.accentTheme);
@@ -157,6 +211,13 @@ function Settings() {
       await setDoc(
         doc(db, "Users", user.uid),
         {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          organization: organization.trim(),
+          mobilePhone: buildInternationalPhoneNumber(getPhoneCountryByIso2(mobilePhoneCountryIso2).dialCode, mobilePhone),
+          mobilePhoneCountryIso2,
+          mobilePhoneCountryDialCode: getPhoneCountryByIso2(mobilePhoneCountryIso2).dialCode,
+          mobilePhoneLocalNumber: mobilePhone.trim(),
           defaultProjectLocation: defaultProjectLocation.trim(),
           appearanceMode,
           accentTheme,
@@ -257,7 +318,7 @@ function Settings() {
 
                 <div className="flex items-center gap-6 mb-6">
                   <div className="w-20 h-20 bg-primary/20 text-primary border-2 border-primary/20 rounded-full flex items-center justify-center text-2xl font-bold uppercase">
-                    {user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U"}
+                    {fullName.charAt(0) || user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U"}
                   </div>
                   <div>
                     <button className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm transition-colors flex items-center gap-2 mb-2 font-medium">
@@ -272,14 +333,57 @@ function Settings() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-medium uppercase text-muted-foreground">Full Name</label>
+                    <label className="text-xs font-medium uppercase text-muted-foreground">First Name</label>
                     <input
                       type="text"
-                      value={fullName}
-                      readOnly
-                      placeholder="No name set"
+                      value={firstName}
+                      onChange={(event) => setFirstName(event.target.value)}
+                      placeholder="First name"
                       className="w-full px-4 py-2 bg-input border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-all text-sm"
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium uppercase text-muted-foreground">Last Name</label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(event) => setLastName(event.target.value)}
+                      placeholder="Last name"
+                      className="w-full px-4 py-2 bg-input border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-all text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium uppercase text-muted-foreground">Organization</label>
+                    <input
+                      type="text"
+                      value={organization}
+                      onChange={(event) => setOrganization(event.target.value)}
+                      placeholder="Organization"
+                      className="w-full px-4 py-2 bg-input border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-all text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium uppercase text-muted-foreground">Phone Number</label>
+                    <div className="flex items-stretch gap-2">
+                      <select
+                        value={mobilePhoneCountryIso2}
+                        onChange={(event) => setMobilePhoneCountryIso2(event.target.value)}
+                        className="w-64 px-3 py-2 bg-input border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-all text-sm"
+                      >
+                        {PHONE_COUNTRY_CODES.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.flag} {option.dialCode}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="tel"
+                        value={mobilePhone}
+                        onChange={(event) => setMobilePhone(event.target.value)}
+                        placeholder="Phone number"
+                        className="flex-1 px-4 py-2 bg-input border border-border rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-all text-sm"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-medium uppercase text-muted-foreground">Email Address</label>
@@ -392,9 +496,25 @@ function Settings() {
 
             <Tabs.Content value="processing" className="space-y-6 outline-none">
               <SettingSection icon={Monitor} title="Processing">
-                <p className="text-sm text-muted-foreground">
-                  Processing preferences will be added in a future update.
-                </p>
+                <SettingRow
+                  label="CPU Usage"
+                  description="Current processor usage on this device"
+                  control={<span className="text-sm font-semibold">{formatPercent(cpuUsage)}</span>}
+                />
+                <SettingRow
+                  label="GPU Usage"
+                  description="Current graphics usage on this device"
+                  control={<span className="text-sm font-semibold">{formatPercent(gpuUsage)}</span>}
+                />
+                <SettingRow
+                  label="RAM Usage"
+                  description="Current memory consumption on this device"
+                  control={
+                    <span className="text-sm font-semibold">
+                      {formatGigabytes(ramUsedGB)} / {formatGigabytes(ramTotalGB)} ({formatPercent(ramPercent)})
+                    </span>
+                  }
+                />
               </SettingSection>
             </Tabs.Content>
 

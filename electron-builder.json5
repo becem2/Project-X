@@ -3,7 +3,7 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "YourAppID",
   "asar": true,
-  "productName": "Drone Mesh",
+  "productName": "DroneMesh",
   "directories": {
     "output": "release/${version}"
   },

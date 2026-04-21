@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FolderOpen, Upload, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
 import { deleteDoc, doc, getDoc, runTransaction, serverTimestamp, setDoc } from "firebase/firestore";
+import type { DocumentReference } from "firebase/firestore";
 import { auth, db } from "../../../Config/Firebase";
 import ToggleOption from "./NewProject/ToggleOption";
 
@@ -10,6 +11,10 @@ type SelectedImage = {
   path: string;
   name: string;
   size: number;
+};
+
+type ProjectCreateResult = {
+  projectPath: string;
 };
 
 const generateProjectId = () => {
@@ -118,7 +123,7 @@ function NewProject() {
       return;
     }
 
-    let reservedProjectDocRef: any = null;
+    let reservedProjectDocRef: DocumentReference | null = null;
 
     try {
       setIsCreating(true);
@@ -157,13 +162,13 @@ function NewProject() {
       reservedProjectDocRef = projectDocRef;
 
       // 2. Create local folders and copy images via Electron
-      const result = await window.electronAPI.createProject({
+      const result = (await window.electronAPI.createProject({
         projectId,
         projectName: cleanedProjectName,
         projectLocation: resolvedProjectLocation,
         description,
         images: selectedImages,
-      });
+      })) as ProjectCreateResult;
 
       // 3. Update project path in Firestore
       await setDoc(projectDocRef, {
@@ -179,12 +184,13 @@ function NewProject() {
         state: { projectId, projectName: cleanedProjectName, imageCount: selectedImageCount },
       });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (reservedProjectDocRef) {
         try { await deleteDoc(reservedProjectDocRef); } catch { /* ignore */ }
       }
       console.error("Failed to create project", error);
-      const invalidPathError = /project location|folder|not found/i.test(error.message);
+      const errorMessage = error instanceof Error ? error.message : "Failed to create project.";
+      const invalidPathError = /project location|folder|not found/i.test(errorMessage);
       setPathInvalid(invalidPathError);
       setCreateNudgeKey((currentKey) => currentKey + 1);
     } finally {
@@ -326,7 +332,7 @@ function NewProject() {
                 <div className="max-h-32 overflow-auto rounded-lg border border-border bg-input/20 p-2">
                   {selectedImages.map((img) => (
                     <div key={img.path} className="flex justify-between text-[11px] py-1 border-b border-border/50 last:border-0">
-                      <span className="truncate max-w-[200px]">{img.name}</span>
+                      <span className="truncate max-w-50">{img.name}</span>
                       <span className="text-muted-foreground">{formatFileSize(img.size)}</span>
                     </div>
                   ))}

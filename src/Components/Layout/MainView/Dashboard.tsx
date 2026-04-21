@@ -165,6 +165,7 @@ function Dashboard() {
               progress?: number;
               imageCount?: number;
               projectIconPath?: string;
+              projectIconUrl?: string;
               createdAt?: unknown;
             };
 
@@ -174,6 +175,8 @@ function Dashboard() {
               typeof projectData.progress === "number"
                 ? Math.min(100, Math.max(0, Math.round(projectData.progress)))
                 : undefined;
+            const iconDownloadUrl =
+              typeof projectData.projectIconUrl === "string" ? projectData.projectIconUrl.trim() : "";
 
             return {
               id: projectData.projectId || projectDoc.id,
@@ -182,7 +185,9 @@ function Dashboard() {
               progress: getProgressByStatus(status, progress),
               date: formatRelativeDate(createdAtDate),
               images: typeof projectData.imageCount === "number" ? projectData.imageCount : 0,
-              iconUrl: toFileAssetUrl(typeof projectData.projectIconPath === "string" ? projectData.projectIconPath : ""),
+              iconUrl:
+                iconDownloadUrl ||
+                toFileAssetUrl(typeof projectData.projectIconPath === "string" ? projectData.projectIconPath : ""),
               createdAtMs: createdAtDate?.getTime() ?? 0,
             } satisfies DashboardProject;
           });
@@ -205,16 +210,56 @@ function Dashboard() {
   }, []);
 
   const recentProjects = useMemo(() => projects.slice(0, 4), [projects]);
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(
-    (project) => project.status === "Processing" || project.status === "Not Started"
-  ).length;
-  const completedProjects = projects.filter((project) => project.status === "Processed").length;
-  const totalImages = projects.reduce((total, project) => total + project.images, 0);
-  const completionRate = totalProjects > 0 ? Math.round((completedProjects / totalProjects) * 100) : 0;
-  const projectsCreatedThisWeek = projects.filter(
-    (project) => project.createdAtMs >= Date.now() - 7 * 24 * 60 * 60 * 1000
-  ).length;
+  const {
+    totalProjects,
+    activeProjects,
+    completedProjects,
+    totalImages,
+    completionRate,
+    projectsCreatedThisWeek,
+  } = useMemo(() => {
+    const weekThresholdMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const totals = projects.reduce(
+      (accumulator, project) => {
+        accumulator.totalImages += project.images;
+
+        if (project.status === "Processing" || project.status === "Not Started") {
+          accumulator.activeProjects += 1;
+        }
+
+        if (project.status === "Processed") {
+          accumulator.completedProjects += 1;
+        }
+
+        if (project.createdAtMs >= weekThresholdMs) {
+          accumulator.projectsCreatedThisWeek += 1;
+        }
+
+        return accumulator;
+      },
+      {
+        activeProjects: 0,
+        completedProjects: 0,
+        totalImages: 0,
+        projectsCreatedThisWeek: 0,
+      }
+    );
+
+    const totalProjectsCount = projects.length;
+    const completionRateValue =
+      totalProjectsCount > 0
+        ? Math.round((totals.completedProjects / totalProjectsCount) * 100)
+        : 0;
+
+    return {
+      totalProjects: totalProjectsCount,
+      activeProjects: totals.activeProjects,
+      completedProjects: totals.completedProjects,
+      totalImages: totals.totalImages,
+      completionRate: completionRateValue,
+      projectsCreatedThisWeek: totals.projectsCreatedThisWeek,
+    };
+  }, [projects]);
 
   const activityItems = useMemo(
     () =>

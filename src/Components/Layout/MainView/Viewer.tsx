@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+﻿/* eslint-disable react-hooks/exhaustive-deps */
+import { useState, useRef, useEffect } from "react";
 import {
   Grid3x3,
   Lightbulb,
@@ -71,7 +72,7 @@ type OrthophotoCompanionImage = {
   url: string;
   georef: { sourceCrs: string | null; rawCorners: GeoPoint[] } | null;
   renderInfo: {
-    kind: "tiff-decoded" | "native-image";
+    kind: "png-decoded" | "native-image";
     samples: number | null;
   };
 };
@@ -108,7 +109,7 @@ const GOOGLE_MAPS_SCRIPT_URL = "https://maps.googleapis.com/maps/api/js";
 let googleMapsScriptPromise: Promise<void> | null = null;
 
 const ensureGoogleMapsLoaded = () => {
-  const globalWindow = window as Window & {
+  const globalWindow = window as unknown as Window & {
     google?: unknown;
     [key: string]: unknown;
   };
@@ -405,7 +406,19 @@ const loadTiffAsOverlay = async (file: File): Promise<OrthophotoCompanionImage> 
   }
 
   context.putImageData(imageData, 0, 0);
-  const url = canvas.toDataURL("image/png");
+  const url = await new Promise<string>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Failed to encode TIFF preview as PNG."));
+          return;
+        }
+
+        resolve(URL.createObjectURL(blob));
+      },
+      "image/png"
+    );
+  });
 
   let georef: OrthophotoCompanionImage["georef"] = null;
   try {
@@ -445,7 +458,7 @@ const loadTiffAsOverlay = async (file: File): Promise<OrthophotoCompanionImage> 
     url,
     georef,
     renderInfo: {
-      kind: "tiff-decoded",
+      kind: "png-decoded",
       samples: sampleCount,
     },
   };
@@ -658,11 +671,11 @@ const setVectorLayerOpacity = (groupLayer: L.FeatureGroup, opacity: number) => {
 type PointCloudColorMode = "rgb" | "elevation" | "intensity" | "classification";
 
 const swapYAndZInAttribute = (attribute: THREE.BufferAttribute) => {
-  for (let i = 0; i < attribute.count; i += 1) {
-    const y = attribute.getY(i);
-    const z = attribute.getZ(i);
-    attribute.setY(i, z);
-    attribute.setZ(i, y);
+  for (let index = 0; index < attribute.count; index += 1) {
+    const y = attribute.getY(index);
+    const z = attribute.getZ(index);
+    attribute.setY(index, z);
+    attribute.setZ(index, y);
   }
   attribute.needsUpdate = true;
 };
@@ -684,9 +697,10 @@ const swapYAndZInGeometry = (geometry: THREE.BufferGeometry) => {
 
 type ViewerProps = {
   projectIdOverride?: string | null;
+  isActive?: boolean;
 };
 
-export function Viewer({ projectIdOverride }: ViewerProps = {}) {
+export function Viewer({ projectIdOverride, isActive = true }: ViewerProps = {}) {
   const { projectId: routeProjectId } = useParams();
   const projectId = projectIdOverride ?? routeProjectId;
   const navigate = useNavigate();
@@ -746,6 +760,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
   const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
   const activeCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const activeControlsRef = useRef<OrbitControls | null>(null);
+  const cameraTransitionFrameRef = useRef<number | null>(null);
   const measurementPlaneYRef = useRef(0);
   const lastAutoLoadedProjectIdRef = useRef<string | null>(null);
   const lastAutoLoadedOrthophotoProjectIdRef = useRef<string | null>(null);
@@ -777,7 +792,6 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     raster: { visible: true, opacity: 0.88 },
     dxf: [],
   });
-  const plyLoader = useMemo(() => new PLYLoader(), []);
   const plyHasFaces = Boolean(plyGeometry?.getIndex());
   const effective3DViewMode = sceneObject ? viewMode : (plyGeometry && !plyHasFaces ? "pointcloud" : viewMode);
 
@@ -824,6 +838,8 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     distancePoints,
     areaPoints,
   ]);
+
+  const plyLoader = useRef(new PLYLoader()).current;
 
   const applyPointCloudColorMode = (pointsObject: THREE.Points, mode: PointCloudColorMode) => {
     const material = Array.isArray(pointsObject.material) ? pointsObject.material[0] : pointsObject.material;
@@ -1149,6 +1165,13 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     };
   };
 
+  const cancelCameraTransition = () => {
+    if (cameraTransitionFrameRef.current !== null) {
+      window.cancelAnimationFrame(cameraTransitionFrameRef.current);
+      cameraTransitionFrameRef.current = null;
+    }
+  };
+
   useEffect(() => {
     if (dataType !== "ndvi") return;
 
@@ -1463,6 +1486,8 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
+    if (!isActive) return;
+
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     scene.background = new THREE.Color(viewerSettingsRef.current.backgroundColor);
@@ -1516,50 +1541,55 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     scene.add(root);
 
     if (sceneObject) {
-      const imported = sceneObject.clone(true);
+      const useLiveReference = Boolean(sceneObject.userData?.keepLiveReference);
+      if (useLiveReference) {
+        root.add(sceneObject);
+      } else {
+        const imported = sceneObject.clone(true);
 
-      // Clone materials/geometries so renderer cleanup won't mutate imported source references.
-      imported.traverse((object: THREE.Object3D) => {
-        if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
+        // Clone materials/geometries so renderer cleanup won't mutate imported source references.
+        imported.traverse((object: THREE.Object3D) => {
+          if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
 
-        object.geometry = object.geometry.clone();
-        if (Array.isArray(object.material)) {
-          object.material = object.material.map((material) => material.clone());
-        } else {
-          object.material = object.material.clone();
-        }
-
-        if (object instanceof THREE.Mesh) {
-          const material = Array.isArray(object.material) ? object.material[0] : object.material;
-          const meshMaterial = material as THREE.Material & {
-            wireframe?: boolean;
-            transparent?: boolean;
-            opacity?: number;
-            needsUpdate?: boolean;
-          };
-          if ("wireframe" in meshMaterial) {
-            meshMaterial.wireframe = viewerSettingsRef.current.wireframe;
+          object.geometry = object.geometry.clone();
+          if (Array.isArray(object.material)) {
+            object.material = object.material.map((material) => material.clone());
+          } else {
+            object.material = object.material.clone();
           }
-          if ("opacity" in meshMaterial) {
-            meshMaterial.transparent = viewerSettingsRef.current.meshOpacity < 100;
-            meshMaterial.opacity = viewerSettingsRef.current.meshOpacity / 100;
-          }
-          meshMaterial.needsUpdate = true;
-          object.castShadow = viewerSettingsRef.current.showShadows;
-          object.receiveShadow = viewerSettingsRef.current.showShadows;
-        }
 
-        if (object instanceof THREE.Points) {
-          const material = Array.isArray(object.material) ? object.material[0] : object.material;
-          if (material instanceof THREE.PointsMaterial) {
-            material.size = viewerSettingsRef.current.pointSize;
-            material.transparent = viewerSettingsRef.current.meshOpacity < 100;
-            material.opacity = viewerSettingsRef.current.meshOpacity / 100;
+          if (object instanceof THREE.Mesh) {
+            const material = Array.isArray(object.material) ? object.material[0] : object.material;
+            const meshMaterial = material as THREE.Material & {
+              wireframe?: boolean;
+              transparent?: boolean;
+              opacity?: number;
+              needsUpdate?: boolean;
+            };
+            if ("wireframe" in meshMaterial) {
+              meshMaterial.wireframe = viewerSettingsRef.current.wireframe;
+            }
+            if ("opacity" in meshMaterial) {
+              meshMaterial.transparent = viewerSettingsRef.current.meshOpacity < 100;
+              meshMaterial.opacity = viewerSettingsRef.current.meshOpacity / 100;
+            }
+            meshMaterial.needsUpdate = true;
+            object.castShadow = viewerSettingsRef.current.showShadows;
+            object.receiveShadow = viewerSettingsRef.current.showShadows;
           }
-        }
-      });
 
-      root.add(imported);
+          if (object instanceof THREE.Points) {
+            const material = Array.isArray(object.material) ? object.material[0] : object.material;
+            if (material instanceof THREE.PointsMaterial) {
+              material.size = viewerSettingsRef.current.pointSize;
+              material.transparent = viewerSettingsRef.current.meshOpacity < 100;
+              material.opacity = viewerSettingsRef.current.meshOpacity / 100;
+            }
+          }
+        });
+
+        root.add(imported);
+      }
     } else {
       const colorAttribute = plyGeometry?.getAttribute("color") as THREE.BufferAttribute | undefined;
       const hasVertexColors = Boolean(colorAttribute);
@@ -1568,10 +1598,10 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
       if (!geometry) {
         if (viewMode === "pointcloud") {
           const positions = new Float32Array(12000);
-          for (let i = 0; i < positions.length; i += 3) {
-            positions[i] = (Math.random() - 0.5) * 8;
-            positions[i + 1] = (Math.random() - 0.5) * 8;
-            positions[i + 2] = (Math.random() - 0.5) * 8;
+          for (let index = 0; index < positions.length; index += 3) {
+            positions[index] = (Math.random() - 0.5) * 8;
+            positions[index + 1] = (Math.random() - 0.5) * 8;
+            positions[index + 2] = (Math.random() - 0.5) * 8;
           }
           geometry = new THREE.BufferGeometry();
           geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -1757,7 +1787,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
         }
 
         if (settings.areaPoints.length >= 3) {
-          const areaLabel = `${polygonAreaFromPoints(settings.areaPoints).toFixed(2)} m²`;
+          const areaLabel = `${polygonAreaFromPoints(settings.areaPoints).toFixed(2)} m┬▓`;
           const centroid = settings.areaPoints.reduce(
             (accumulator, point) => ({
               x: accumulator.x + point.x,
@@ -1869,6 +1899,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
 
     const animate = () => {
       controls.update();
+
       renderer.render(scene, camera);
       drawMeasurementOverlay();
       animationFrame = window.requestAnimationFrame(animate);
@@ -1883,6 +1914,8 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     animate();
 
     return () => {
+      cancelCameraTransition();
+
       saved3DViewStateRef.current = {
         position: [camera.position.x, camera.position.y, camera.position.z],
         quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
@@ -1905,6 +1938,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
       }
 
       scene.traverse((object: THREE.Object3D) => {
+        if (object.userData?.keepLiveReference) return;
         if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
 
         object.geometry.dispose();
@@ -2045,7 +2079,6 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
       setPlyName(chunks[chunks.length - 1] || filePath);
       setLoadedFilePath(filePath);
       updateProjectRootPath(filePath);
-      updateProjectRootPath(filePath);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load the .ply file.";
       setPlyError(message);
@@ -2090,7 +2123,6 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
   };
 
   const findPointCloudPly = async (projectRootPath: string): Promise<string | null> => {
-    // Fast path: expected output location.
     const directFolderPath = joinPath(projectRootPath, "odm_filterpoints");
     const directEntries = await readDirectoryEntries(directFolderPath);
     const directPly = directEntries.find(
@@ -2098,7 +2130,6 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
     );
     if (directPly) return directPly.path;
 
-    // Fallback: recursive scan to locate odm_filterpoints/point_cloud.ply anywhere in project tree.
     const maxDepth = 6;
     const queue: Array<{ path: string; depth: number }> = [{ path: projectRootPath, depth: 0 }];
 
@@ -2606,7 +2637,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
 
   const processOrthophotoFiles = async (files: File[], forcedSourceCrs: string | null = null) => {
     setIsOrthophotoBusy(true);
-    setOrthophotoStatus("Reading image georeferencing (TIFF metadata or .tfw) and optional .dxf...");
+    setOrthophotoStatus("Reading image georeferencing and preparing a PNG overlay preview...");
 
     try {
       const tfwFile = files.find((file) => file.name.toLowerCase().endsWith(".tfw"));
@@ -2788,8 +2819,8 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
 
       setOrthophotoStatus(
         dxfFiles.length > 0
-          ? `${georeferenceSource === "tiff-metadata" ? "TIFF-metadata" : "TFW"} raster and DXF vectors rendered in real-world position.`
-          : `${georeferenceSource === "tiff-metadata" ? "TIFF-metadata" : "TFW"}-referenced raster rendered in real-world position.`
+              ? `${georeferenceSource === "tiff-metadata" ? "TIFF-metadata" : "TFW"} raster (PNG preview) and DXF vectors rendered in real-world position.`
+              : `${georeferenceSource === "tiff-metadata" ? "TIFF-metadata" : "TFW"}-referenced raster (PNG preview) rendered in real-world position.`
       );
       return true;
     } catch (error) {
@@ -2805,12 +2836,6 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
 
     if (dataType === "3d") {
       if (extension === "ply") {
-        const electronPath = (file as File & { path?: string }).path;
-        if (electronPath) {
-          void loadPlyFromPath(electronPath);
-          return;
-        }
-
         loadPlyFromFile(file);
         return;
       }
@@ -3168,7 +3193,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                     <Box className="w-4 h-4" />
                     Model Information
                   </span>
-                  <span className="text-muted-foreground">▼</span>
+                  <span className="text-muted-foreground">Γû╝</span>
                 </summary>
                 <div className="px-4 pb-4 space-y-2 text-xs border-t border-border">
                   <PropertyRow label="File" value={dataType === "3d" ? plyName : "scene_preview"} />
@@ -3190,7 +3215,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                       <Camera className="w-4 h-4" />
                       Camera Settings
                     </span>
-                    <span className="text-muted-foreground">▼</span>
+                    <span className="text-muted-foreground">Γû╝</span>
                   </summary>
                   <div className="px-4 pb-4 space-y-4 border-t border-border">
                     <div>
@@ -3205,7 +3230,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                           onChange={(event) => setFieldOfView(parseInt(event.target.value, 10))}
                           className="w-full"
                         />
-                        <span className="text-xs text-muted-foreground w-10">{fieldOfView}°</span>
+                        <span className="text-xs text-muted-foreground w-10">{fieldOfView}┬░</span>
                       </div>
                     </div>
                   </div>
@@ -3220,7 +3245,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                       <Monitor className="w-4 h-4" />
                       Rendering Options
                     </span>
-                    <span className="text-muted-foreground">▼</span>
+                    <span className="text-muted-foreground">Γû╝</span>
                   </summary>
                   <div className="px-4 pb-4 space-y-3 border-t border-border">
                     <ToggleRow label="Show Grid" checked={showGrid} onChange={setShowGrid} />
@@ -3229,6 +3254,22 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                     <ToggleRow label="Show Axes" checked={showAxes} onChange={setShowAxes} />
                     <ToggleRow label="Shadows" checked={showShadows} onChange={setShowShadows} />
                     <ToggleRow label="Ambient Occlusion" checked={ambientOcclusion} onChange={setAmbientOcclusion} />
+
+                    <div className="pt-2">
+                      <label className="text-sm mb-2 block">Render Quality</label>
+                      <select
+                        value={renderQuality}
+                        onChange={(event) =>
+                          setRenderQuality(event.target.value as "low" | "medium" | "high" | "ultra")
+                        }
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded text-sm"
+                      >
+                        <option value="low">Low (Fastest)</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="ultra">Ultra (Best Quality)</option>
+                      </select>
+                    </div>
                     
                     <div className="pt-2">
                       <label className="text-sm mb-2 block">Point Cloud Opacity</label>
@@ -3257,7 +3298,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                       <Navigation className="w-4 h-4" />
                       Point Cloud Settings
                     </span>
-                    <span className="text-muted-foreground">▼</span>
+                    <span className="text-muted-foreground">Γû╝</span>
                   </summary>
                   <div className="px-4 pb-4 space-y-4 border-t border-border">
                     <div>
@@ -3299,7 +3340,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                       <Map className="w-4 h-4" />
                       Orthophoto Geospatial Tools
                     </span>
-                    <span className="text-muted-foreground">▼</span>
+                    <span className="text-muted-foreground">Γû╝</span>
                   </summary>
                   <div className="px-4 pb-4 space-y-3 border-t border-border">
                     <div>
@@ -3424,7 +3465,7 @@ export function Viewer({ projectIdOverride }: ViewerProps = {}) {
                     <Ruler className="w-4 h-4" />
                     Measurements & Tools
                   </span>
-                  <span className="text-muted-foreground">▼</span>
+                  <span className="text-muted-foreground">Γû╝</span>
                 </summary>
                 <div className="px-4 pb-4 space-y-3 border-t border-border">
                   <ToggleRow label="Show Measurements" checked={showMeasurements} onChange={handleShowMeasurementsChange} />
